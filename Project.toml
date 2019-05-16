@@ -1,0 +1,9 @@
+name = "CBModelTools"
+uuid = "dc6a9b3c-767f-11e9-354c-d3b861182d3e"
+authors = ["varnerlab <jdv27@cornell.edu>"]
+version = "0.1.0"
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Kegg = "fc1d53e8-75a3-11e9-3ebe-e9984a30bc00"
+MAT = "23992714-dd62-5051-b70f-ba57cb901cac"
