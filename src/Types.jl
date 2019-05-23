@@ -8,6 +8,27 @@ mutable struct Mapping
 	end
 end
 
+mutable struct CBMetabolite
+
+    symbol::String
+    name::String
+    kegg_id::String
+
+    function CBMetabolite()
+		this = new()
+	end
+end
+
+mutable struct CBRule
+
+    reaction_name::String
+    rule::String
+
+    function CBRule()
+		this = new()
+	end
+end
+
 mutable struct CBMetabolicReaction
 
     record::String
