@@ -42,19 +42,172 @@ function load_cobra_model_file(path_to_cobra_mat_file::String, model_name::Strin
     return cobra_dictionary
 end
 
-function write_cobra_model_file(path_to_cobra_mat_file::String,cobra_dictionary::Dict{String,Any})
+function extract_files_from_cobra_model(cobra_dictionary::Dict{String,Any}, kegg_organism_code::String, path_to_model_directory::String)
+
+    # check - does this path exist?
+    is_dir_path_ok(path_to_model_directory)
+
+    # check the cobra dictionary - is it legit?
+    is_cobra_dictionary_ok(cobra_dictionary)
+
+    # ok, looks ok if we get here - write out a bunch of files that we'll need
+
+    # reaction mapping -
+    path_to_reaction_mapping_file = joinpath(path_to_model_directory,"ReactionNameMap.dat")
+    export_reaction_mapping_file(cobra_dictionary,path_to_reaction_mapping_file)
+
+    # gene order -
+    path_to_gene_order_file = joinpath(path_to_model_directory,"GeneOrder.dat")
+    export_gene_order_file(cobra_dictionary, kegg_organism_code, path_to_gene_order_file)
+
+    # reaction tags to gene mapping -
+    path_reaction_gene_mapping_file = joinpath(path_to_model_directory,"ReactionGeneMap.dat")
+    export_reaction_tag_to_gene_mapping_file(cobra_dictionary, kegg_organism_code, path_reaction_gene_mapping_file)
+
+    # reaction tag to ec mapping -
+    path_reaction_to_ec_number_mapping = joinpath(path_to_model_directory, "ReactionECNumberMap.dat")
+    export_reaction_tag_to_ec_mapping_file(cobra_dictionary, kegg_organism_code, path_reaction_to_ec_number_mapping)
 end
 
-function generate_cobra_dictionary_from_vff(path_to_vff_file::String)::Dict{String,Any}
+function write_cobra_model_file(path_to_cobra_mat_file::String,cobra_dictionary::Dict{String,Any})
+
+    # ok, so
+
+end
+
+function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_mapping_file_dir::String)::Dict{String,Any}
 
     # check the path -
     is_file_path_ok(path_to_vff_file)
 
+    # does the mapping file dir exist?
+    is_dir_path_ok(path_to_mapping_file_dir)
+
     # initialize -
     cobra_dictionary = Dict{String,Any}()
 
+    # parse the sections of the vff -
+    problem_dictionary = load_vff_model_file(path_to_vff_file)
 
+    # let's fill in the fields for the cobra dictionary -
+    # rxns: reaction tags -
+    reaction_order_array = problem_dictionary["reaction_order_array"]
+    cobra_dictionary["rxns"] = reaction_order_array
 
+    # rxnNames: build reaction name array -
+    reaction_name_array = Array{String,1}()
+    path_reaction_name_mapping_file = joinpath(path_to_mapping_file_dir,"ReactionNameMap.dat")
+    is_file_path_ok(path_reaction_name_mapping_file)
+    reaction_tag_name_map = build_mapping_dictionary(path_reaction_name_mapping_file)
+    for reaction_tag in reaction_order_array
+
+        # check, do we have this tag in the map?
+        if (haskey(reaction_tag_name_map,reaction_tag) == true)
+            reaction_name_mapping_wrapper = reaction_tag_name_map[reaction_tag]
+            value_set = reaction_name_mapping_wrapper.value
+            push!(reaction_name_array,pop!(value_set))
+        else
+            push!(reaction_name_array,"")
+        end
+    end
+    cobra_dictionary["rxnNames"] = reaction_name_array
+
+    # genes: list of genes -
+    path_to_gene_order_file = joinpath(path_to_mapping_file_dir,"GeneOrder.dat")
+    is_file_path_ok(path_to_gene_order_file)
+    gene_order_array = read_file_from_path(path_to_gene_order_file)
+    cobra_dictionary["genes"] = gene_order_array
+
+    # rules: rules -
+    rule_text_array = Array{String,1}()
+    list_of_rules = problem_dictionary["list_of_rules"]
+    for reaction_tag in reaction_order_array
+
+        # do we have this reaction_tag in our rule list?
+        if (haskey(list_of_rules,reaction_tag) == true)
+            rule_text = list_of_rules[reaction_tag].rule_text
+            push!(rule_text_array,rule_text)
+        else
+            push!(rule_text_array,"")
+        end
+    end
+    cobra_dictionary["rules"] = rule_text_array
+
+    # rxnECNumbers: Add the ec numbers of the cobra dictionary -
+    path_reaction_to_ec_number_mapping_file = joinpath(path_to_mapping_file_dir,"ReactionECNumberMap.dat")
+    is_file_path_ok(path_reaction_to_ec_number_mapping_file)
+    rxn_ec_map = build_mapping_dictionary(path_reaction_to_ec_number_mapping_file)
+    ec_number_array = Array{String,1}()
+    for reaction_tag in reaction_order_array
+
+        # check, do we have the reaction tag in
+        if (haskey(rxn_ec_map,reaction_tag) == true)
+
+            # ok, we have an entry -
+            mapping_object = rxn_ec_map[reaction_tag]
+            record = ""
+            while (isempty(mapping_object.value)==false)
+                ec_number = pop!(mapping_object.value)
+                record*="$(ec_number),"
+            end
+
+            record *= "[]"
+            push!(ec_number_array,record)
+        else
+            push!(ec_number_array,"[]")
+        end
+    end
+    cobra_dictionary["rxnECNumbers"] = ec_number_array
+
+    # mets: add metabolite symbols -
+    # get list of reaction wrappers in the proper order -
+    list_of_reactions = problem_dictionary["list_of_reactions"]
+    reaction_wrapper_array = Array{CBMetabolicReaction,1}()
+    for reaction_tag in reaction_order_array
+
+        # do we have this reaction?
+        reaction_wrapper = list_of_reactions[reaction_tag]
+        push!(reaction_wrapper_array, reaction_wrapper)
+    end
+
+    # get my metabolite symbols -
+    metabolite_wrapper_array = build_metabolite_symbol_array(reaction_wrapper_array)
+    mets_array = Array{String,1}()
+    for metabolite_wrapper in metabolite_wrapper_array
+        symbol = metabolite_wrapper.symbol
+        push!(mets_array,symbol)
+    end
+    cobra_dictionary["mets"] = mets_array
+
+    # build metabolite name array -
+    list_of_metabolite_wrappers = problem_dictionary["list_of_metabolites"]
+    met_names_array = Array{String,1}()
+    met_kegg_id_array = Array{String,1}()
+    for metabolite_symbol in mets_array
+
+        # do we have this metabolite wrapper?
+        if (haskey(list_of_metabolite_wrappers,metabolite_symbol) == true)
+
+            # get the met name -
+            met_wrapper = list_of_metabolite_wrappers[metabolite_symbol]
+            met_name = met_wrapper.name
+            met_kegg_id = met_wrapper.kegg_id
+
+            # cache -
+            push!(met_names_array,met_name)
+            push!(met_kegg_id_array,met_kegg_id)
+        else
+
+            # cache -
+            push!(met_names_array,"[]")
+            push!(met_kegg_id_array,"[]")
+        end
+    end
+    cobra_dictionary["metNames"] = met_names_array
+    cobra_dictionary["metKEGGID"] = met_kegg_id_array
+
+    # return -
+    return cobra_dictionary
 end
 
 function export_reaction_mapping_file(cobra_dictionary::Dict{String,Any}, path_to_mapping_file::String)

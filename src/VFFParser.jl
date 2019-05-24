@@ -1,8 +1,9 @@
 # --- PRIVATE METHODS ----------------------------------------------------------- #
-function parse_vff_reaction_section(reaction_section_buffer::Array{String,1})::Dict{String,CBMetabolicReaction}
+function parse_vff_reaction_section(reaction_section_buffer::Array{String,1})
 
     # initialize -
     reaction_dictionary = Dict{String,CBMetabolicReaction}()
+    reaction_order_array = Array{String,1}()
 
     # process each line -
     for reaction_line in reaction_section_buffer
@@ -21,6 +22,9 @@ function parse_vff_reaction_section(reaction_section_buffer::Array{String,1})::D
             # get the name/key -
             reaction_key = reaction_record_components_array[1]
 
+            # cache this (we need to keep the order that appears in the VFF) -
+            push!(reaction_order_array, reaction_key)
+
             # populate -
             reaction_wrapper.record = reaction_line
             reaction_wrapper.reaction_name = reaction_key
@@ -36,7 +40,7 @@ function parse_vff_reaction_section(reaction_section_buffer::Array{String,1})::D
     end
 
     # return -
-    return reaction_dictionary
+    return (reaction_order_array, reaction_dictionary)
 end
 
 function parse_vff_rules_section(rules_section_buffer::Array{String,1})::Dict{String,CBRule}
@@ -44,7 +48,23 @@ function parse_vff_rules_section(rules_section_buffer::Array{String,1})::Dict{St
     # initialize -
     rules_dictionary = Dict{String,CBRule}()
 
-    
+    # parse rule structure -
+    for rule in rules_section_buffer
+
+        # build new wrapper -
+        rule_wrapper = CBRule()
+
+        # split around =
+        rule_components_array = split(rule,"=")
+
+        # populate the wrapper -
+        reaction_name = rule_components_array[1]
+        rule_wrapper.reaction_name = reaction_name
+        rule_wrapper.rule_text = rule_components_array[2]
+
+        # cache -
+        rules_dictionary[reaction_name] = rule_wrapper
+    end
 
     # return -
     return rules_dictionary
@@ -85,6 +105,148 @@ function parse_vff_metabolite_section(metabolite_section_buffer::Array{String,1}
     # return -
     return metabolite_dictionary
 end
+
+function build_metabolite_symbol_array(reaction_array::Array{CBMetabolicReaction,1})
+
+  # Method variables -
+  species_symbol_array = Array{CBMetabolite,1}()
+
+  # Helper function to parse the reaction phrases, split out the symbols
+  function _parse_phrase(reaction_phrase::String)
+
+    # Method variables -
+    local_species_array = Array{CBMetabolite,1}()
+
+    # Split around + -
+    fragment_array = split(reaction_phrase,"+")
+    for fragment in fragment_array
+
+      if (contains(fragment,"*"))
+
+          local_fragment_array = split(fragment,"*");
+          species_symbol = CBMetabolite();
+          species_symbol.symbol = local_fragment_array[2];
+
+      else
+
+        # Build -
+        species_symbol = CBMetabolite()
+        species_symbol.symbol = fragment
+      end
+
+      # check - is this the []?
+      if (species_symbol.symbol != "[]")
+          # grab -
+          push!(local_species_array,species_symbol)
+      end
+    end
+
+    # return -
+    return local_species_array
+  end
+
+  function _isequal(species_model_1::CBMetabolite,species_model_2::CBMetabolite)
+    if (species_model_1.symbol == species_model_2.symbol)
+      return true
+    end
+    return false
+  end
+
+  function _add_symbol!(species_symbol_array,species_symbol)
+
+    contains_species_already = false
+    for cached_species_model in species_symbol_array
+
+      if (_isequal(cached_species_model,species_symbol))
+        contains_species_already = true
+        break
+      end
+    end
+
+    if (contains_species_already == false)
+      push!(species_symbol_array,species_symbol)
+    end
+  end
+
+  # iterate through and get the symbols -
+  for reaction in reaction_array
+
+    tmp_species_array_left = _parse_phrase(reaction.left_phrase)
+    tmp_species_array_right = _parse_phrase(reaction.right_phrase)
+    append!(tmp_species_array_left,tmp_species_array_right)
+
+    for species_model in tmp_species_array_left
+      _add_symbol!(species_symbol_array,species_model)
+    end
+  end
+
+  # ok, so the species symbol array is *not* sorted)
+  # let's sort the species -
+  tmp_array = String[]
+  for species_symbol::CBMetabolite in species_symbol_array
+      push!(tmp_array,species_symbol.symbol)
+  end
+
+  # generate permutation array -
+  idxa_sorted = sortperm(tmp_array)
+  sorted_symbol_array = species_symbol_array[idxa_sorted]
+  sorted_tmp_array = tmp_array[idxa_sorted]
+
+  # ok, if a species contains [], then put it at the end -
+  c_symbol_array = CBMetabolite[]
+  e_symbol_array = CBMetabolite[]
+  m_symbol_array = CBMetabolite[]
+  r_symbol_array = CBMetabolite[]
+  x_symbol_array = CBMetabolite[]
+  t_symbol_array = CBMetabolite[]
+  no_compartment_array = CBMetabolite[]
+  partitioned_symbol_array = CBMetabolite[]
+
+  # find all the species in [e]
+  idx_all_e = findall(x->occursin("[e]",x)==true,sorted_tmp_array)
+  for index in idx_all_e
+      push!(partitioned_symbol_array,sorted_symbol_array[index])
+  end
+
+  # find all the species in [c]
+  idx_all_c = findall(x->occursin("[c]",x)==true,sorted_tmp_array)
+  for index in idx_all_c
+      push!(partitioned_symbol_array,sorted_symbol_array[index])
+  end
+
+  # find all the species in [m]
+  idx_all_m = findall(x->occursin("[m]",x)==true,sorted_tmp_array)
+  for index in idx_all_m
+      push!(partitioned_symbol_array,sorted_symbol_array[index])
+  end
+
+  # find all the species in [r]
+  idx_all_r = findall(x->occursin("[r]",x)==true, sorted_tmp_array)
+  for index in idx_all_r
+      push!(partitioned_symbol_array,sorted_symbol_array[index])
+  end
+
+  # find all the species in [x]
+  idx_all_x = findall(x->occursin("[x]",x)==true,sorted_tmp_array)
+  for index in idx_all_x
+      push!(partitioned_symbol_array,sorted_symbol_array[index])
+  end
+
+  # find all the species in [t]
+  idx_all_t = findall(x->occursin("[t]",x)==true,sorted_tmp_array)
+  for index in idx_all_t
+      push!(partitioned_symbol_array,sorted_symbol_array[index])
+  end
+
+  # find all species w/no compartment -
+  idx_all_nc = findall(x->occursin(r"\[*\]",x)==false,sorted_tmp_array)
+  for index in idx_all_nc
+      push!(partitioned_symbol_array,sorted_symbol_array[index])
+  end
+
+  # return -
+  return partitioned_symbol_array
+end
 # ------------------------------------------------------------------------------ #
 
 # --- PUBLIC METHODS ----------------------------------------------------------- #
@@ -101,11 +263,13 @@ function load_vff_model_file(path_to_vff_file::String)::Dict{String,Any}
 
     # parse the reaction section -
     reaction_section = extract_section(file_buffer_array,"#REACTION::START","#REACTION::END")
-    problem_dictionary["list_of_reactions"] = parse_vff_reaction_section(reaction_section)
+    (reaction_order_array, reaction_dictionary) = parse_vff_reaction_section(reaction_section)
+    problem_dictionary["list_of_reactions"] = reaction_dictionary
+    problem_dictionary["reaction_order_array"] = reaction_order_array
 
     # parse the rules section -
     rule_section = extract_section(file_buffer_array,"#RULES::START","#RULES::END")
-    rules_dictionary = parse_vff_rules_section(rule_section)
+    problem_dictionary["list_of_rules"] = parse_vff_rules_section(rule_section)
 
     # parse the metabolite section -
     metabolite_section = extract_section(file_buffer_array,"#METABOLITES::START","#METABOLITES::END")
@@ -115,7 +279,7 @@ function load_vff_model_file(path_to_vff_file::String)::Dict{String,Any}
     return problem_dictionary
 end
 
-function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, path_to_vff_file::String; path_to_reaction_to_ec_mapping_file::Union{String,Nothing}=nothing)
+function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, path_to_vff_file::String; path_to_model_mapping_files::Union{String,Nothing}=nothing)
 
     # checks -
     is_dir_path_ok(path_to_vff_file)
@@ -133,7 +297,10 @@ function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, 
 
     # do we have a reaction_to_ec_mapping file?
     reaction_to_ec_mapping_dict = Dict{String,Mapping}()
-    if (path_to_reaction_to_ec_mapping_file != nothing)
+    if (path_to_model_mapping_files != nothing)
+
+        # create a path to the reaction ec mapping file -
+        path_to_reaction_to_ec_mapping_file = joinpath(path_to_model_mapping_files,"ReactionECNumberMap.dat")
 
         # check path -
         is_file_path_ok(path_to_reaction_to_ec_mapping_file)
@@ -155,6 +322,13 @@ function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, 
     +(vff_buffer,"// GENERATED BY: CBModelTools")
     +(vff_buffer,"// GENERATED ON: $(Dates.now())")
     +(vff_buffer,"// SOURCE: https://github.com/varnerlab/CBModelTools")
+    +(vff_buffer,"//")
+    +(vff_buffer,"// VFF (Varner Flat File) format is a simple text based format")
+    +(vff_buffer,"// for encoding metabolic (or other) types of biological models.")
+    +(vff_buffer,"// Metabolic VFFs have three sections:")
+    +(vff_buffer,"// RULES:")
+    +(vff_buffer,"// METABOLITES:")
+    +(vff_buffer,"// REACTIONS:")
     +(vff_buffer,"// --------------------------------------------------------- //")
     +(vff_buffer,"")
 

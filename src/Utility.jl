@@ -1,3 +1,7 @@
+function contains(string,token)
+    return occursin(token,string)
+end
+
 function is_file_path_ok(path_to_file::String)
 
     if (isfile(path_to_file) == false)

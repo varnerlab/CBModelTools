@@ -22,7 +22,7 @@ end
 mutable struct CBRule
 
     reaction_name::String
-    rule::String
+    rule_text::String
 
     function CBRule()
 		this = new()
