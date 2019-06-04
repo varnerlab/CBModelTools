@@ -247,6 +247,69 @@ function build_metabolite_symbol_array(reaction_array::Array{CBMetabolicReaction
   # return -
   return partitioned_symbol_array
 end
+
+function build_stoichiometric_matrix(species_symbol_array::Array{CBMetabolite,1},reaction_array::Array{CBMetabolicReaction,1})
+
+  # Method variables -
+  number_of_species = length(species_symbol_array)
+  number_of_reactions = length(reaction_array);
+  stoichiometric_matrix = zeros(number_of_species,number_of_reactions);
+
+  function _parse_reaction_phrase(lexeme,reaction_phrase)
+
+    # Split around + -
+    coefficient = 0.0;
+    fragment_array = split(reaction_phrase,"+")
+    for fragment in fragment_array
+
+      if (contains(fragment,"*"))
+          local_fragment_array = split(fragment,"*");
+          test_lexeme = local_fragment_array[2];
+
+          if (lexeme == test_lexeme)
+            coefficient = parse(Float64,local_fragment_array[1]);
+            break
+          end
+
+      else
+
+        # Build -
+        test_lexeme = fragment;
+        if (lexeme == test_lexeme)
+          coefficient = 1.0;
+          break
+        end
+      end
+    end
+
+    return coefficient;
+  end
+
+  function _find_stoichiometric_coefficient(species_model::CBMetabolite,reaction::CBMetabolicReaction)
+
+    # Method variables -
+    stoichiometric_coefficient = 0.0
+
+    # Check the left and right phrase -
+    stoichiometric_coefficient += -1.0*(_parse_reaction_phrase(species_model.symbol,reaction.left_phrase))
+    stoichiometric_coefficient += _parse_reaction_phrase(species_model.symbol,reaction.right_phrase)
+    return stoichiometric_coefficient;
+  end
+
+
+  # setup counters -
+  for (row_index,species_symbol) in enumerate(species_symbol_array)
+    for (col_index,reaction) in enumerate(reaction_array)
+
+      # Is this species involved in this reaction?
+      stoichiometric_matrix[row_index,col_index] = _find_stoichiometric_coefficient(species_symbol,reaction);
+
+    end
+  end
+
+  # return -
+  return stoichiometric_matrix
+end
 # ------------------------------------------------------------------------------ #
 
 # --- PUBLIC METHODS ----------------------------------------------------------- #

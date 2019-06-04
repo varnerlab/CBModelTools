@@ -71,8 +71,16 @@ end
 
 function write_cobra_model_file(path_to_cobra_mat_file::String,cobra_dictionary::Dict{String,Any})
 
-    # ok, so
+    # check the dir -
+    is_dir_path_ok(path_to_cobra_mat_file)
 
+    # get the model name -
+    model_name = splitdir(splitext(path_to_cobra_mat_file)[1])[2]
+
+    # ok, the dir is legit, so let's write out the cobra file -
+    file = matopen(path_to_cobra_mat_file, "w")
+    write(file, "$(model_name)", cobra_dictionary)
+    close(file)
 end
 
 function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_mapping_file_dir::String)::Dict{String,Any}
@@ -105,9 +113,9 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
         if (haskey(reaction_tag_name_map,reaction_tag) == true)
             reaction_name_mapping_wrapper = reaction_tag_name_map[reaction_tag]
             value_set = reaction_name_mapping_wrapper.value
-            push!(reaction_name_array,pop!(value_set))
+            push!(reaction_name_array, pop!(value_set))
         else
-            push!(reaction_name_array,"")
+            push!(reaction_name_array,reaction_tag)
         end
     end
     cobra_dictionary["rxnNames"] = reaction_name_array
@@ -126,7 +134,11 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
         # do we have this reaction_tag in our rule list?
         if (haskey(list_of_rules,reaction_tag) == true)
             rule_text = list_of_rules[reaction_tag].rule_text
-            push!(rule_text_array,rule_text)
+            if (rule_text != "[]")
+                push!(rule_text_array,rule_text)
+            else
+                push!(rule_text_array,"")
+            end
         else
             push!(rule_text_array,"")
         end
@@ -134,27 +146,25 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
     cobra_dictionary["rules"] = rule_text_array
 
     # rxnECNumbers: Add the ec numbers of the cobra dictionary -
-    path_reaction_to_ec_number_mapping_file = joinpath(path_to_mapping_file_dir,"ReactionECNumberMap.dat")
-    is_file_path_ok(path_reaction_to_ec_number_mapping_file)
-    rxn_ec_map = build_mapping_dictionary(path_reaction_to_ec_number_mapping_file)
+    list_of_reactions = problem_dictionary["list_of_reactions"]
     ec_number_array = Array{String,1}()
     for reaction_tag in reaction_order_array
 
-        # check, do we have the reaction tag in
-        if (haskey(rxn_ec_map,reaction_tag) == true)
+        # check - do we have this reaction tag?
+        if (haskey(list_of_reactions,reaction_tag) == true)
 
-            # ok, we have an entry -
-            mapping_object = rxn_ec_map[reaction_tag]
-            record = ""
-            while (isempty(mapping_object.value)==false)
-                ec_number = pop!(mapping_object.value)
-                record*="$(ec_number),"
-            end
+            # get the wrapper -
+            reaction_wrapper = list_of_reactions[reaction_tag]
 
-            record *= "[]"
-            push!(ec_number_array,record)
+            # get the ec_number field -
+            ec_number_record = reaction_wrapper.ec_number
+
+            # cache -
+            push!(ec_number_array, ec_number_record)
         else
-            push!(ec_number_array,"[]")
+            # for some reason, we don't have this reaction tag?
+            # if this happens, we have some crazy sh*tnitz happening, better throw an exception
+            throw(ErrorException("reaction tag not in the list of reactions."))
         end
     end
     cobra_dictionary["rxnECNumbers"] = ec_number_array
@@ -179,6 +189,54 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
     end
     cobra_dictionary["mets"] = mets_array
 
+    # S: generate the stoichiometric matrix -
+    S = build_stoichiometric_matrix(metabolite_wrapper_array,reaction_wrapper_array)
+    cobra_dictionary["S"] = S
+
+    # c: objective vector - default is 0's
+    # how many reactions do we have?
+    (number_of_species,number_of_reactions) = size(S)
+    c_vector = zeros(number_of_reactions)
+    cobra_dictionary["c"] = c_vector
+
+    # lb: lower flux bound (from the vff) -
+    lb_array = Array{String,1}()
+    rev_array = Float64[]
+    for reaction_wrapper in reaction_wrapper_array
+
+        # get lower bound -
+        reverse_bound_value = reaction_wrapper.reverse
+        if (reverse_bound_value == "-inf")
+            push!(lb_array,"-1000.0")
+        else
+            push!(lb_array,reverse_bound_value)
+        end
+
+        if (parse(Float64,reverse_bound_value)<0.0)
+            push!(rev_array,1.0)
+        else
+            push!(rev_array,0.0)
+        end
+    end
+    cobra_dictionary["lb"] = lb_array
+    cobra_dictionary["rev"] = rev_array
+
+    # ub: upper flux bound (from the vff) -
+    ub_array = Array{String,1}()
+    for reaction_wrapper in reaction_wrapper_array
+
+        # get upper bound -
+        forward_bound_value = reaction_wrapper.forward
+        if (forward_bound_value == "inf")
+            push!(ub_array,"1000.0")
+        else
+            push!(ub_array,forward_bound_value)
+        end
+    end
+    cobra_dictionary["ub"] = ub_array
+
+
+
     # build metabolite name array -
     list_of_metabolite_wrappers = problem_dictionary["list_of_metabolites"]
     met_names_array = Array{String,1}()
@@ -199,8 +257,8 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
         else
 
             # cache -
-            push!(met_names_array,"[]")
-            push!(met_kegg_id_array,"[]")
+            push!(met_names_array,"")
+            push!(met_kegg_id_array,"")
         end
     end
     cobra_dictionary["metNames"] = met_names_array
