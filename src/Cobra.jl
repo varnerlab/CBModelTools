@@ -97,9 +97,14 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
     # parse the sections of the vff -
     problem_dictionary = load_vff_model_file(path_to_vff_file)
 
+    # get some stuff from the problem dictionary -
+    list_of_reactions = problem_dictionary["list_of_reactions"]
+    reaction_order_array = problem_dictionary["reaction_order_array"]
+    gene_order_array = problem_dictionary["gene_order_array"]
+    list_of_genes = problem_dictionary["list_of_genes"]
+
     # let's fill in the fields for the cobra dictionary -
     # rxns: reaction tags -
-    reaction_order_array = problem_dictionary["reaction_order_array"]
     cobra_dictionary["rxns"] = reaction_order_array
 
     # rxnNames: build reaction name array -
@@ -121,9 +126,6 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
     cobra_dictionary["rxnNames"] = reaction_name_array
 
     # genes: list of genes -
-    path_to_gene_order_file = joinpath(path_to_mapping_file_dir,"GeneOrder.dat")
-    is_file_path_ok(path_to_gene_order_file)
-    gene_order_array = read_file_from_path(path_to_gene_order_file)
     cobra_dictionary["genes"] = gene_order_array
 
     # rules: rules -
@@ -146,7 +148,6 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
     cobra_dictionary["rules"] = rule_text_array
 
     # rxnECNumbers: Add the ec numbers of the cobra dictionary -
-    list_of_reactions = problem_dictionary["list_of_reactions"]
     ec_number_array = Array{String,1}()
     for reaction_tag in reaction_order_array
 
@@ -171,7 +172,6 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
 
     # mets: add metabolite symbols -
     # get list of reaction wrappers in the proper order -
-    list_of_reactions = problem_dictionary["list_of_reactions"]
     reaction_wrapper_array = Array{CBMetabolicReaction,1}()
     for reaction_tag in reaction_order_array
 
@@ -180,36 +180,20 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
         push!(reaction_wrapper_array, reaction_wrapper)
     end
 
-    # get my metabolite symbols -
+    # Get the metabolites from the reaction list -
     metabolite_wrapper_array = build_metabolite_symbol_array(reaction_wrapper_array)
-    mets_array = Array{String,1}()
-    for metabolite_wrapper in metabolite_wrapper_array
-        symbol = metabolite_wrapper.symbol
-        push!(mets_array,symbol)
-    end
-    cobra_dictionary["mets"] = mets_array
-
-    # S: generate the stoichiometric matrix -
-    S = build_stoichiometric_matrix(metabolite_wrapper_array,reaction_wrapper_array)
-    cobra_dictionary["S"] = S
-
-    # c: objective vector - default is 0's
-    # how many reactions do we have?
-    (number_of_species,number_of_reactions) = size(S)
-    c_vector = zeros(number_of_reactions)
-    cobra_dictionary["c"] = c_vector
 
     # lb: lower flux bound (from the vff) -
-    lb_array = Array{String,1}()
+    lb_array = Array{Float64,1}()
     rev_array = Float64[]
     for reaction_wrapper in reaction_wrapper_array
 
         # get lower bound -
         reverse_bound_value = reaction_wrapper.reverse
         if (reverse_bound_value == "-inf")
-            push!(lb_array,"-1000.0")
+            push!(lb_array,-1000.0)
         else
-            push!(lb_array,reverse_bound_value)
+            push!(lb_array,parse(Float64,reverse_bound_value))
         end
 
         if (parse(Float64,reverse_bound_value)<0.0)
@@ -222,47 +206,82 @@ function generate_cobra_dictionary_from_vff(path_to_vff_file::String, path_to_ma
     cobra_dictionary["rev"] = rev_array
 
     # ub: upper flux bound (from the vff) -
-    ub_array = Array{String,1}()
+    ub_array = Array{Float64,1}()
     for reaction_wrapper in reaction_wrapper_array
 
         # get upper bound -
         forward_bound_value = reaction_wrapper.forward
         if (forward_bound_value == "inf")
-            push!(ub_array,"1000.0")
+            push!(ub_array,1000.0)
         else
-            push!(ub_array,forward_bound_value)
+            push!(ub_array,parse(Float64,forward_bound_value))
         end
     end
     cobra_dictionary["ub"] = ub_array
 
-
-
     # build metabolite name array -
+    metabolite_symbol_order_array = problem_dictionary["metabolite_symbol_order_array"]
     list_of_metabolite_wrappers = problem_dictionary["list_of_metabolites"]
     met_names_array = Array{String,1}()
     met_kegg_id_array = Array{String,1}()
-    for metabolite_symbol in mets_array
+    met_symbol_array = Array{String,1}()
+    for metabolite_symbol in metabolite_symbol_order_array
 
         # do we have this metabolite wrapper?
         if (haskey(list_of_metabolite_wrappers,metabolite_symbol) == true)
 
             # get the met name -
             met_wrapper = list_of_metabolite_wrappers[metabolite_symbol]
+            met_symbol = met_wrapper.symbol
             met_name = met_wrapper.name
             met_kegg_id = met_wrapper.kegg_id
 
             # cache -
+            push!(met_symbol_array, met_symbol)
             push!(met_names_array,met_name)
             push!(met_kegg_id_array,met_kegg_id)
         else
 
             # cache -
+            push!(met_symbol_array,"")
             push!(met_names_array,"")
             push!(met_kegg_id_array,"")
         end
     end
     cobra_dictionary["metNames"] = met_names_array
     cobra_dictionary["metKEGGID"] = met_kegg_id_array
+    cobra_dictionary["mets"] = met_symbol_array
+
+    # S: generate the stoichiometric matrix -
+    S = build_stoichiometric_matrix(met_symbol_array,reaction_wrapper_array)
+    cobra_dictionary["S"] = S
+
+    # c: objective vector - default is 0's
+    # how many reactions do we have?
+    (number_of_species,number_of_reactions) = size(S)
+    c_vector = zeros(number_of_reactions)
+    cobra_dictionary["c"] = c_vector
+
+    # rxnGeneMat - reaction to gene mapping array -
+    number_of_genes = length(gene_order_array)
+    rxnGeneMat = zeros(number_of_reactions, number_of_genes)
+    for (row_index, reaction_tag) in enumerate(reaction_order_array)
+        for (col_index, gene_symbol) in enumerate(gene_order_array)
+
+            # ok, get the reation-gene map for this reaction -
+            if (haskey(list_of_genes, reaction_tag) == true)
+
+                # grab the genes -
+                gene_set = list_of_genes[reaction_tag].genes
+
+                # does this set contain the gene?
+                if (in(gene_symbol,gene_set) == true)
+                    rxnGeneMat[row_index,col_index] = 1.0
+                end
+            end
+        end
+    end
+    cobra_dictionary["rxnGeneMat"] = rxnGeneMat
 
     # return -
     return cobra_dictionary

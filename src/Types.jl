@@ -29,6 +29,16 @@ mutable struct CBRule
 	end
 end
 
+mutable struct CBReactionGeneMap
+
+    reaction_name::String
+    genes::Set{String}
+
+    function CBReactionGeneMap()
+        this = new()
+    end
+end
+
 mutable struct CBMetabolicReaction
 
     record::String

@@ -11,4 +11,5 @@ include("Utility.jl")
 include("Types.jl")
 include("VFFParser.jl")
 include("Cobra.jl")
+include("QAQC.jl")
 # ------------------------------------------------------------------------------ #

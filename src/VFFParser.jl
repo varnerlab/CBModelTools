@@ -70,40 +70,116 @@ function parse_vff_rules_section(rules_section_buffer::Array{String,1})::Dict{St
     return rules_dictionary
 end
 
-function parse_vff_metabolite_section(metabolite_section_buffer::Array{String,1})::Dict{String,CBMetabolite}
+function parse_vff_gene_order_section(gene_order_section::Array{String,1})::Array{String,1}
 
     # initialize -
-    metabolite_dictionary = Dict{String,CBMetabolite}()
+    gene_order_array = Array{String,1}()
 
-    # iterate through each metabolite -
-    for metabolite_record in metabolite_section_buffer
+    # main -
+    for gene_symbol in gene_order_section
+
+        # also, grab this symbol for a global list -
+        push!(gene_order_array, gene_symbol)
+    end
+
+    # return -
+    return gene_order_array
+end
+
+function parse_vff_reaction_gene_section(reaction_gene_map_section_buffer::Array{String,1})::Dict{String,CBReactionGeneMap}
+
+    # initialize -
+    reaction_gene_map = Dict{String,CBReactionGeneMap}()
+
+    # process each of the gene records -
+    for gene_record in reaction_gene_map_section_buffer
 
         # split around =
-        metabolite_record_component_array = split(metabolite_record,"=")
+        gene_record_component_array = split(gene_record,"=")
 
-        # metabolite symbol is [1]
-        metabolite_symbol = metabolite_record_component_array[1]
-        metabolite_name_field = metabolite_record_component_array[2]
-        if (isempty(metabolite_name_field) == false)
+        # get the reaction tag -
+        metabolic_reaction_tag = gene_record_component_array[1]
 
-            # split along :: -
-            metabolite_name_symbol_array = split(metabolite_name_field,"::")
-            full_metabolite_name = metabolite_name_symbol_array[1]
-            kegg_id = metabolite_name_symbol_array[2]
+        # gene data field -
+        gene_data_field = gene_record_component_array[2]
+        if (isempty(gene_data_field) == false)
 
-            # build wrapper -
-            metabolite_wrapper = CBMetabolite()
-            metabolite_wrapper.symbol = metabolite_symbol
-            metabolite_wrapper.name = full_metabolite_name
-            metabolite_wrapper.kegg_id = kegg_id
+            # ok, we have a gene list -
 
-            # cache -
-            metabolite_dictionary[metabolite_symbol] = metabolite_wrapper
+            # Build a mapping object -
+            mapping_object = CBReactionGeneMap()
+            mapping_object.reaction_name = metabolic_reaction_tag
+            gene_symbol_set = Set{String}()
+
+            # split around ::
+            local_gene_symbol_list = split(gene_data_field,"::")
+            for gene_symbol in local_gene_symbol_list
+                if gene_symbol != "[]"
+
+                    # push into local cache -
+                    push!(gene_symbol_set, gene_symbol)
+                end
+            end
+            mapping_object.genes = gene_symbol_set
+
+            # insert thos record into the map -
+            reaction_gene_map[metabolic_reaction_tag] = mapping_object
+        else
+
+            # we don't have a gene record, this is an error.
+            # even if we don't have a gene, we should have ::[]
+            throw(ErrorException("missing gene record for reaction $(metabolic_reaction_tag)"))
         end
     end
 
     # return -
-    return metabolite_dictionary
+    return reaction_gene_map
+end
+
+function parse_vff_metabolite_section(metabolite_section_buffer::Array{String,1})::Tuple{Dict{String,CBMetabolite}, Array{String,1}}
+
+    # initialize -
+    metabolite_dictionary = Dict{String,CBMetabolite}()
+    metabolite_symbol_order_array = Array{String,1}()
+
+    # iterate through each metabolite -
+    for metabolite_record in metabolite_section_buffer
+
+        # skip comments and empty lines -
+        if (occursin("//", metabolite_record) == false && isempty(metabolite_record) == false)
+
+            # split around =
+            metabolite_record_component_array = split(metabolite_record,"=")
+
+            # metabolite symbol is [1]
+            metabolite_symbol = metabolite_record_component_array[1]
+
+            # grab -
+            push!(metabolite_symbol_order_array, metabolite_symbol)
+
+            # go ..
+            metabolite_name_field = metabolite_record_component_array[2]
+            if (isempty(metabolite_name_field) == false)
+
+                # split along :: -
+                metabolite_name_symbol_array = split(metabolite_name_field,"::")
+                full_metabolite_name = metabolite_name_symbol_array[1]
+                kegg_id = metabolite_name_symbol_array[2]
+
+                # build wrapper -
+                metabolite_wrapper = CBMetabolite()
+                metabolite_wrapper.symbol = metabolite_symbol
+                metabolite_wrapper.name = full_metabolite_name
+                metabolite_wrapper.kegg_id = kegg_id
+
+                # cache -
+                metabolite_dictionary[metabolite_symbol] = metabolite_wrapper
+            end
+        end
+    end
+
+    # return -
+    return (metabolite_dictionary, metabolite_symbol_order_array)
 end
 
 function build_metabolite_symbol_array(reaction_array::Array{CBMetabolicReaction,1})
@@ -248,7 +324,7 @@ function build_metabolite_symbol_array(reaction_array::Array{CBMetabolicReaction
   return partitioned_symbol_array
 end
 
-function build_stoichiometric_matrix(species_symbol_array::Array{CBMetabolite,1},reaction_array::Array{CBMetabolicReaction,1})
+function build_stoichiometric_matrix(species_symbol_array::Array{String,1},reaction_array::Array{CBMetabolicReaction,1})
 
   # Method variables -
   number_of_species = length(species_symbol_array)
@@ -285,14 +361,14 @@ function build_stoichiometric_matrix(species_symbol_array::Array{CBMetabolite,1}
     return coefficient;
   end
 
-  function _find_stoichiometric_coefficient(species_model::CBMetabolite,reaction::CBMetabolicReaction)
+  function _find_stoichiometric_coefficient(species_symbol::String,reaction::CBMetabolicReaction)
 
     # Method variables -
     stoichiometric_coefficient = 0.0
 
     # Check the left and right phrase -
-    stoichiometric_coefficient += -1.0*(_parse_reaction_phrase(species_model.symbol,reaction.left_phrase))
-    stoichiometric_coefficient += _parse_reaction_phrase(species_model.symbol,reaction.right_phrase)
+    stoichiometric_coefficient += -1.0*(_parse_reaction_phrase(species_symbol,reaction.left_phrase))
+    stoichiometric_coefficient += _parse_reaction_phrase(species_symbol,reaction.right_phrase)
     return stoichiometric_coefficient;
   end
 
@@ -336,13 +412,24 @@ function load_vff_model_file(path_to_vff_file::String)::Dict{String,Any}
 
     # parse the metabolite section -
     metabolite_section = extract_section(file_buffer_array,"#METABOLITES::START","#METABOLITES::END")
-    problem_dictionary["list_of_metabolites"] = parse_vff_metabolite_section(metabolite_section)
+    (metabolite_dictionary, metabolite_symbol_order_array) = parse_vff_metabolite_section(metabolite_section)
+    problem_dictionary["list_of_metabolites"] = metabolite_dictionary
+    problem_dictionary["metabolite_symbol_order_array"] = metabolite_symbol_order_array
+
+    # parse the reaction-gene-mapping section -
+    gene_reaction_section = extract_section(file_buffer_array,"#REACTION-GENE-MAP::START","#REACTION-GENE-MAP::END")
+    gene_reaction_dictionary = parse_vff_reaction_gene_section(gene_reaction_section)
+    problem_dictionary["list_of_genes"] = gene_reaction_dictionary
+
+    # parse the gene-order section -
+    gene_order_section = extract_section(file_buffer_array,"#GENE-SYMBOL-ORDER::START","#GENE-SYMBOL-ORDER::END")
+    problem_dictionary["gene_order_array"] = parse_vff_gene_order_section(gene_order_section)
 
     # return -
     return problem_dictionary
 end
 
-function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, path_to_vff_file::String; path_to_model_mapping_files::Union{String,Nothing}=nothing)
+function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, path_to_vff_file::String, kegg_organism_code::String; path_to_model_mapping_files::Union{String,Nothing}=nothing)
 
     # checks -
     is_dir_path_ok(path_to_vff_file)
@@ -353,10 +440,14 @@ function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, 
     # get the stoichiometric array, and some other stuff
     stoichiometric_matrix = Matrix(cobra_dictionary["S"])
     list_of_reaction_tags = cobra_dictionary["rxns"]
+    list_of_genes = cobra_dictionary["genes"]
     list_of_species = cobra_dictionary["mets"]
     list_of_reversible_reactions = cobra_dictionary["rev"]
     list_of_rules = cobra_dictionary["rules"]
     list_of_species_names = cobra_dictionary["metNames"]
+
+    # get the rxn gene mapping matrix -
+    RGM = Matrix(cobra_dictionary["rxnGeneMat"])
 
     # do we have a reaction_to_ec_mapping file?
     reaction_to_ec_mapping_dict = Dict{String,Mapping}()
@@ -380,7 +471,7 @@ function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, 
 
     # Add a header -
     filename = splitdir(path_to_vff_file)[2]
-    +(vff_buffer,"// --------------------------------------------------------- //")
+    +(vff_buffer,"// ----------------------------------------------------------- //")
     +(vff_buffer,"// $(filename)")
     +(vff_buffer,"// GENERATED BY: CBModelTools")
     +(vff_buffer,"// GENERATED ON: $(Dates.now())")
@@ -392,11 +483,66 @@ function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, 
     +(vff_buffer,"// RULES:")
     +(vff_buffer,"// METABOLITES:")
     +(vff_buffer,"// REACTIONS:")
-    +(vff_buffer,"// --------------------------------------------------------- //")
+    +(vff_buffer,"// ----------------------------------------------------------- //")
+    +(vff_buffer,"")
+
+
+    # gene-reaction-map section
+    +(vff_buffer,"#REACTION-GENE-MAP::START ------------------------------------ //")
+
+    # main loop -
+    for reaction_index = 1:number_of_reactions
+
+        # what is the tag for this reaction?
+        reaction_tag = list_of_reaction_tags[reaction_index]
+
+        # initialize -
+        record = ""
+        record *= "$(reaction_tag)="
+
+        # does this reaction have associated genes?
+        idx_genes = findall(x->x==1,RGM[reaction_index,:])
+        local_gene_set = Set{String}()
+        if (!isempty(idx_genes))
+
+            # ok, we have genes, grab them -
+            gene_id_array = list_of_genes[idx_genes]
+
+            # process each gene -
+            for gene_id in gene_id_array
+
+                # make the KEGG gene id -
+                kegg_gene_id = "$(kegg_organism_code):$(gene_id)"
+
+                # cache -
+                push!(local_gene_set,kegg_gene_id)
+            end
+        end
+
+        if (isempty(local_gene_set) == false)
+
+            # make an ec record -
+            gene_record = ""
+            for gene_number in local_gene_set
+                gene_record*="$(gene_number)::"
+            end
+
+            # remove trailing ,
+            gene_record*="[]"
+
+            # add the record -
+            record*="$(gene_record)"
+
+            # push into buffer and go around again -
+            +(vff_buffer,record)
+        end
+    end
+
+    +(vff_buffer,"#REACTION-GENE-MAP::END -------------------------------------- //")
     +(vff_buffer,"")
 
     # rules section -
-    +(vff_buffer,"#RULES::START ---------------------------------------------- //")
+    +(vff_buffer,"#RULES::START ------------------------------------------------ //")
     for (index,rule) in enumerate(list_of_rules)
 
         # init empty line -
@@ -417,11 +563,11 @@ function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, 
         +(vff_buffer,line)
     end
 
-    +(vff_buffer,"#RULES::END ------------------------------------------------ //")
+    +(vff_buffer,"#RULES::END -------------------------------------------------- //")
     +(vff_buffer,"")
 
     # Write the metabolites section -
-    +(vff_buffer,"#METABOLITES::START ---------------------------------------- //")
+    +(vff_buffer,"#METABOLITES::START ------------------------------------------ //")
 
     # build a kegg-id metabolite name map -
     mmt = build_metabolite_matching_table()
@@ -446,11 +592,11 @@ function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, 
         +(vff_buffer,line)
     end
 
-    +(vff_buffer,"#METABOLITES::END ------------------------------------------ //")
+    +(vff_buffer,"#METABOLITES::END -------------------------------------------- //")
     +(vff_buffer,"")
 
     # write reactions -
-    +(vff_buffer,"#REACTION::START ------------------------------------------- //")
+    +(vff_buffer,"#REACTION::START --------------------------------------------- //")
     for reaction_index = 1:number_of_reactions
 
         # initialize empty buffer -
@@ -566,7 +712,22 @@ function generate_vff_from_cobra_dictionary(cobra_dictionary::Dict{String,Any}, 
         # add buffer to list of strings -
         +(vff_buffer,line)
     end
-    +(vff_buffer,"#REACTION::END --------------------------------------------- //")
+    +(vff_buffer,"#REACTION::END ----------------------------------------------- //")
+    +(vff_buffer,"")
+
+    # genes section -
+    +(vff_buffer,"#GENE-SYMBOL-ORDER::START ------------------------------------ //")
+    for gene_symbol in list_of_genes
+
+        # make a record -
+        record = ""
+        record *= "$(kegg_organism_code):$(gene_symbol)"
+
+        # write the record -
+        +(vff_buffer,record)
+    end
+
+    +(vff_buffer,"#GENE-SYMBOL-ORDER::END -------------------------------------- //")
 
     # Write out the vff file -
     open("$(path_to_vff_file)", "w") do f
