@@ -1,5 +1,5 @@
-### Expanded Varnerlab Flat File (VFF) format
-The expanded Varnerlab Flat File (VFF) format is a simple text format that can used to work with constraint based models. It is composed of several sections that each contain different types of information:
+## Expanded Varnerlab Flat File (VFF) format
+The expanded Varnerlab Flat File (VFF) format is a simple text format used to work with constraint based models. It is composed of several sections, each containing different types of information:
 
     // Contents: Mapping between reactions in the model and genes
     // Records: Reaction_name={:: delimited gene set}::[]
@@ -39,3 +39,24 @@ The expanded Varnerlab Flat File (VFF) format is a simple text format that can u
     #GENE-SYMBOL-ORDER::START ------------------------------------ //
     ... gene-symbol-order records go here ...
     #GENE-SYMBOL-ORDER::END -------------------------------------- //
+
+
+### Reaction section
+The reaction section holds chemical reaction records, which are the core of the model.
+Chemical reaction records contain six fields that are comma delimited; Reaction_name,{ecnumbers::[]},reactants,products,reverse,forward.
+
+| Field | Description |
+| ----- | ----------- |
+| Reaction_name | Reaction name string used in the model to denote this reaction. Must be unique
+| EC numbers | [EC numbers](https://en.wikipedia.org/wiki/Enzyme_Commission_number) associated with this reaction. Estimated from KEGG using the gene linkage information. Multiple possible assignments separated with the ``::`` delimiter. If no information then ``[]``.
+| Reactants | Chemical reactant string e.g., 2*A+B. Non-unity stoichiometric coefficients are affixed to metabolite by *. No spaces between entries and the ``+``.
+| Products | Chemical product string e.g., 4*C+3*D. Same rules as reactant strings
+| Reverse | Reaction lower bound. If reversible ``-inf`` if non-reversible 0
+| Forward | Reaction upper bound. Can be either ``inf`` or 0
+
+### Metabolites section
+
+
+### Rule section
+### Reaction gene mapping section
+### Gene symbol order section
