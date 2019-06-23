@@ -10,7 +10,8 @@ export write_cobra_model_file
 export generate_vff_from_cobra_dictionary
 export generate_cobra_dictionary_from_vff
 export extract_files_from_cobra_model
-export is_generated_cobra_mat_equal
+
+# export is_generated_cobra_mat_equal
 
 # export export_reaction_tag_to_ec_mapping_file
 # export export_reaction_tag_to_gene_mapping_file

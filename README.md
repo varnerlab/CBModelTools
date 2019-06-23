@@ -12,8 +12,13 @@ Start of the [Julia REPL](https://docs.julialang.org/en/v1/stdlib/REPL/index.htm
 
     (v1.1) pkg> add https://github.com/varnerlab/CBModelTools.git
 
-This will install the `CBModelTools.jl` package and other all required packages.
+This will install the ``CBModelTools.jl`` package and the other required packages.
 ``CBModelTools.jl`` requires Julia 1.x and above.
+
+### How do we edit a COBRA model in MAT format?
+``CBModelTools.jl`` exports [COBRA toolbox](https://opencobra.github.io/cobratoolbox/stable/) models into a text-based format which can be edited e.g., reactions (or other information) added or deleted. Also, there are several types of data that automatically get added to the generated text file such as [EC numbers](https://en.wikipedia.org/wiki/Enzyme_Commission_number) associated with the reactions, and [KEGG metabolite ID](https://www.genome.jp/kegg/compound/) codes (if there are not already present) by using the [KEGG.jl](https://github.com/varnerlab/Kegg) package.
+
+Please check out the [exported text format](/docs/Format.md), a [description of the functions](/docs/Functions.md) in the ``CBModelTools.jl`` package and an [example workflow](/docs/Example.md).
 
 ### Funding
 The work described was supported by the [Center on the Physics of Cancer Metabolism at Cornell University](https://psoc.engineering.cornell.edu) through Award Number 1U54CA210184-01 from the [National Cancer Institute](https://www.cancer.gov). The content is solely the responsibility of the authors and does not necessarily
