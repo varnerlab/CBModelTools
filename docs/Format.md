@@ -41,7 +41,7 @@ The expanded Varnerlab Flat File (VFF) format is a simple text format used to wo
     #GENE-SYMBOL-ORDER::END -------------------------------------- //
 
 
-### Reaction section
+### REACTION metabolite_section
 The reaction section holds chemical reaction records, which are the core of the model.
 Chemical reaction records contain six fields that are comma delimited; Reaction_name,{ecnumbers::[]},reactants,products,reverse,forward.
 
@@ -54,8 +54,15 @@ Chemical reaction records contain six fields that are comma delimited; Reaction_
 | Reverse | Reaction lower bound. If reversible ``-inf`` if non-reversible 0
 | Forward | Reaction upper bound. Can be either ``inf`` or 0
 
-### Metabolites section
+### METABOLITES section
+The metabolites section holds records that map the metabolite symbols used in the ``REACTION`` chemical reaction strings to their actual chemical name, and an associated [KEGG metabolite ID](https://www.genome.jp/kegg/compound/).
+Records in the ``METABOLITES`` section have three fields separated by ``=`` and ``::`` delimiters.
 
+| Field | Description |
+| ----- | ----------- |
+| Metabolite symbol | Short-hand symbol used in the model for a metabolite name. Typically no spaces. Model compartment is indicated by a ``[*]`` suffix where `*` denotes a 1-letter compartment code e.g., ``c`` indicates cytosol. These codes are often model specific.
+| Metabolite name | IUPAC name for the metabolite (most of the time).
+| KEGG Metabolite ID | KEGG compound code. If not provided, we estimate these using the [KEGG.jl](https://github.com/varnerlab/Kegg) package.
 
 ### Rule section
 ### Reaction gene mapping section
